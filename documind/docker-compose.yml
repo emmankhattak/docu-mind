@@ -1,0 +1,47 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: documind
+      POSTGRES_PASSWORD: documind
+      POSTGRES_DB: documind
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U documind"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://documind:documind@db:5432/documind
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CORS_ORIGINS: http://localhost:3000
+    ports: ["8000:8000"]
+    volumes: [uploads:/app/uploads]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
+  worker:
+    build: ./backend
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://documind:documind@db:5432/documind
+      REDIS_URL: redis://redis:6379/0
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    volumes: [uploads:/app/uploads]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
+  web:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  pgdata:
+  uploads:
